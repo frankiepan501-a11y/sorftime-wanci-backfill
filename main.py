@@ -15,10 +15,8 @@ FS_SEC    = os.environ.get("FEISHU_SECRET", "")
 AUTH      = os.environ.get("BACKFILL_TOKEN", "")
 NOTIFY_ID = os.environ.get("NOTIFY_OPENID", "")  # Frankie 聪哥1号 open_id
 
-PRODUCTS = {
-    "dock":       ("FcycbOqACaimScsAMlCcSuDznJb", "tblhytntMO8eG0yj"),
-    "controller": ("FcQ4b0Kosa1QdssEw5Fc3rAmnO1", "tblACa73IIZEdWsF"),
-}
+REG_APP = os.environ.get("REG_APP", "W8LPboJSMaVqlwsizQ8cPVDIn2c")  # 万词总台
+REG_TBL = os.environ.get("REG_TBL", "tbl2g78DcPnxWNwO")            # 作战台注册表
 
 def _req(url, body=None, headers=None, method="POST", timeout=60):
     data = json.dumps(body).encode() if body is not None else None
@@ -44,9 +42,23 @@ def fs_all(tok, app_, tbl):
         else: break
     return out
 
-def sft(keyword):
-    return _req("https://cli.sorftime.com/api/KeywordRequest?domain=1", {"keyword": keyword},
+def sft(keyword, domain=1):
+    return _req("https://cli.sorftime.com/api/KeywordRequest?domain=%d" % domain, {"keyword": keyword},
                 {"Authorization": "BasicAuth " + SFT_KEY, "Browser": "Cli", "Content-Type": "application/json"})
+
+def fetch_registry(tok):
+    out = []
+    for it in fs_all(tok, REG_APP, REG_TBL):
+        f = it["fields"]
+        if txt(f.get("状态")) != "在跑":
+            continue
+        app_ = txt(f.get("作战台App_token")); t1 = txt(f.get("词库表id"))
+        if not app_ or not t1:
+            continue
+        try: domain = int(f.get("Sorftime_domain") or 1)
+        except Exception: domain = 1
+        out.append({"name": txt(f.get("产品")) + "-" + txt(f.get("站点")), "app": app_, "t1": t1, "domain": domain})
+    return out
 
 def txt(f):
     if isinstance(f, list) and f: return f[0].get("text", "")
@@ -70,7 +82,8 @@ def run_backfill(only_empty=False):
     tok = fs_tok()
     today_ms = int(time.time() * 1000)
     summary = []
-    for name, (app_, tbl) in PRODUCTS.items():
+    for P in fetch_registry(tok):
+        name, app_, tbl, domain = P["name"], P["app"], P["t1"], P["domain"]
         recs = fs_all(tok, app_, tbl)
         filled = nodata = err = 0
         last_left = None
@@ -79,7 +92,7 @@ def run_backfill(only_empty=False):
             if not kw: continue
             if only_empty and it["fields"].get("月搜索量"): continue
             try:
-                r = sft(kw)
+                r = sft(kw, domain)
             except Exception:
                 err += 1; time.sleep(1); continue
             last_left = r.get("RequestLeft", last_left)
