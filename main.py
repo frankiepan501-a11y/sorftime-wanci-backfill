@@ -110,6 +110,17 @@ def run_backfill(only_empty=False):
 def health():
     return {"ok": True, "service": "sorftime-wanci-backfill"}
 
+@app.get("/selftest")
+def selftest():
+    """从 Zeabur IP 同步打 1 次 Sorftime, 验证可达性 + IP 白名单 (1 Rq)"""
+    try:
+        r = sft("switch 2 dock")
+        return {"sorftime_reachable": True, "code": r.get("Code"),
+                "request_left": r.get("RequestLeft"),
+                "search_volume": (r.get("Data") or {}).get("SearchVolume")}
+    except Exception as e:
+        return {"sorftime_reachable": False, "error": type(e).__name__ + ": " + str(e)[:200]}
+
 @app.post("/sorftime/backfill")
 def backfill(background: BackgroundTasks, authorization: str = Header(None), only_empty: bool = False):
     if AUTH and authorization != "Bearer " + AUTH:
