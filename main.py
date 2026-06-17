@@ -31,12 +31,14 @@ def fs(tok, method, path, body=None):
     return _req("https://open.feishu.cn" + path, body,
                 {"Authorization": "Bearer " + tok, "Content-Type": "application/json"}, method)
 
-def fs_all(tok, app_, tbl):
+def fs_all(tok, app_, tbl, body=None):
     out, pt = [], None
+    base = {"automatic_fields": False}
+    if body: base.update(body)
     while True:
         p = "/open-apis/bitable/v1/apps/%s/tables/%s/records/search?page_size=500" % (app_, tbl)
         if pt: p += "&page_token=" + pt
-        d = fs(tok, "POST", p, {"automatic_fields": False})["data"]
+        d = fs(tok, "POST", p, base)["data"]
         out += d.get("items", [])
         if d.get("has_more"): pt = d["page_token"]
         else: break
@@ -57,7 +59,8 @@ def fetch_registry(tok):
             continue
         try: domain = int(f.get("Sorftime_domain") or 1)
         except Exception: domain = 1
-        out.append({"name": txt(f.get("产品")) + "-" + txt(f.get("站点")), "app": app_, "t1": t1, "domain": domain})
+        out.append({"name": txt(f.get("产品")) + "-" + txt(f.get("站点")), "site": txt(f.get("站点")),
+                    "app": app_, "t1": t1, "domain": domain})
     return out
 
 def txt(f):
@@ -83,8 +86,9 @@ def run_backfill(only_empty=False):
     today_ms = int(time.time() * 1000)
     summary = []
     for P in fetch_registry(tok):
-        name, app_, tbl, domain = P["name"], P["app"], P["t1"], P["domain"]
-        recs = fs_all(tok, app_, tbl)
+        name, app_, tbl, domain, site = P["name"], P["app"], P["t1"], P["domain"], P["site"]
+        flt = {"filter": {"conjunction": "and", "conditions": [{"field_name": "站点", "operator": "is", "value": [site]}]}} if site else None
+        recs = fs_all(tok, app_, tbl, flt)
         filled = nodata = err = 0
         last_left = None
         for it in recs:
